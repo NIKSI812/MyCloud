@@ -1,15 +1,20 @@
 package com.example.mycloud.ui
 
 import android.app.Application
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mycloud.data.local.AppDatabase
 import com.example.mycloud.data.local.FileEntity
 import com.example.mycloud.data.repository.FileRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class FileViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -20,7 +25,6 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
         repository = FileRepository(dao)
     }
 
-    // Список всех файлов для экрана
     val files: StateFlow<List<FileEntity>> = repository.allFiles
         .stateIn(
             scope = viewModelScope,
@@ -28,31 +32,97 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
-    // CREATE
+    // CREATE (ручное добавление через диалог)
     fun addFile(name: String, type: String, sizeKb: Long, description: String) {
         viewModelScope.launch {
-            repository.insert(
-                FileEntity(
-                    name = name,
-                    type = type,
-                    sizeKb = sizeKb,
-                    description = description
+            try {
+                repository.insert(
+                    FileEntity(
+                        name = name,
+                        type = type,
+                        sizeKb = sizeKb,
+                        description = description
+                    )
                 )
-            )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // ЗАГРУЗКА РЕАЛЬНОГО ФАЙЛА — копируем его внутрь приложения
+    fun uploadFile(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val context = getApplication<Application>()
+                val resolver = context.contentResolver
+
+                // 1. Узнаём имя и размер файла
+                var fileName = "file_${System.currentTimeMillis()}"
+                var sizeBytes = 0L
+                resolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (cursor.moveToFirst()) {
+                        if (nameIndex >= 0) fileName = cursor.getString(nameIndex)
+                        if (sizeIndex >= 0) sizeBytes = cursor.getLong(sizeIndex)
+                    }
+                }
+
+                // 2. Определяем тип (расширение)
+                val type = fileName.substringAfterLast('.', "файл")
+
+                // 3. Копируем файл во внутреннюю папку приложения
+                val savedPath = withContext(Dispatchers.IO) {
+                    val destFile = File(context.filesDir, "${System.currentTimeMillis()}_$fileName")
+                    resolver.openInputStream(uri)?.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    destFile.absolutePath
+                }
+
+                // 4. Сохраняем инфо в базу
+                repository.insert(
+                    FileEntity(
+                        name = fileName,
+                        type = type,
+                        sizeKb = sizeBytes / 1024,
+                        description = "Загружен в хранилище",
+                        uri = savedPath
+                    )
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     // UPDATE
     fun updateFile(file: FileEntity) {
         viewModelScope.launch {
-            repository.update(file)
+            try {
+                repository.update(file)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
-    // DELETE
+    // DELETE — удаляем и из базы, и сам файл
     fun deleteFile(file: FileEntity) {
         viewModelScope.launch {
-            repository.delete(file)
+            try {
+                if (file.uri.isNotBlank()) {
+                    withContext(Dispatchers.IO) {
+                        File(file.uri).delete()
+                    }
+                }
+                repository.delete(file)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 }

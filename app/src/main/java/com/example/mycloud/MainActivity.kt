@@ -20,6 +20,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.mycloud.data.local.FileEntity
 import com.example.mycloud.ui.FileViewModel
 import com.example.mycloud.ui.theme.MyCloudTheme
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : ComponentActivity() {
 
@@ -48,16 +50,26 @@ fun FileScreen(viewModel: FileViewModel) {
     var showDialog by remember { mutableStateOf(false) }
     var editingFile by remember { mutableStateOf<FileEntity?>(null) }
 
+    // Системный выбор файла (фото, видео, музыка, документы)
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.uploadFile(it) }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("MyCloud — Хранилище файлов") })
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                editingFile = null
-                showDialog = true
-            }) {
-                Icon(Icons.Default.Add, contentDescription = "Добавить")
+            Column {
+                // Кнопка загрузки реального файла
+                FloatingActionButton(
+                    onClick = { launcher.launch("*/*") },
+                    modifier = Modifier.padding(bottom = 12.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Загрузить файл")
+                }
             }
         }
     ) { padding ->
@@ -68,7 +80,7 @@ fun FileScreen(viewModel: FileViewModel) {
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Файлов пока нет.\nНажми + чтобы добавить.")
+                Text("Файлов пока нет.\nНажми + чтобы загрузить.")
             }
         } else {
             LazyColumn(
@@ -97,9 +109,7 @@ fun FileScreen(viewModel: FileViewModel) {
             onDismiss = { showDialog = false },
             onSave = { name, type, size, desc ->
                 val current = editingFile
-                if (current == null) {
-                    viewModel.addFile(name, type, size, desc)
-                } else {
+                if (current != null) {
                     viewModel.updateFile(
                         current.copy(
                             name = name,
