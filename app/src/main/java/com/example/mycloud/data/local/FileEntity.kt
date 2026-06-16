@@ -11,5 +11,6 @@ data class FileEntity(
     val type: String,          // тип: документ, фото, видео...
     val sizeKb: Long,          // размер в КБ
     val description: String,   // описание
+    val uri: String = "",      // ссылка на реальный файл в телефоне
     val createdAt: Long = System.currentTimeMillis()  // дата создания
 )
