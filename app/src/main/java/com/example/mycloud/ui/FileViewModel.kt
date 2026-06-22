@@ -9,8 +9,12 @@ import com.example.mycloud.data.local.AppDatabase
 import com.example.mycloud.data.local.FileEntity
 import com.example.mycloud.data.repository.FileRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,12 +29,31 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
         repository = FileRepository(dao)
     }
 
+    // Состояние экрана: Loading / Success / Error
+    private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
+    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    // Список файлов (оставляем для совместимости)
     val files: StateFlow<List<FileEntity>> = repository.allFiles
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    init {
+        // Следим за данными из базы и обновляем состояние экрана
+        viewModelScope.launch {
+            repository.allFiles
+                .onEach { list ->
+                    _uiState.value = UiState.Success(list)
+                }
+                .catch { e ->
+                    _uiState.value = UiState.Error("Ошибка загрузки: ${e.message}")
+                }
+                .collect {}
+        }
+    }
 
     // CREATE (ручное добавление через диалог)
     fun addFile(name: String, type: String, sizeKb: Long, description: String) {
@@ -45,7 +68,7 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             } catch (e: Exception) {
-                e.printStackTrace()
+                _uiState.value = UiState.Error("Не удалось добавить файл: ${e.message}")
             }
         }
     }
@@ -57,7 +80,6 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
                 val context = getApplication<Application>()
                 val resolver = context.contentResolver
 
-                // 1. Узнаём имя и размер файла
                 var fileName = "file_${System.currentTimeMillis()}"
                 var sizeBytes = 0L
                 resolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -69,10 +91,8 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // 2. Определяем тип (расширение)
                 val type = fileName.substringAfterLast('.', "файл")
 
-                // 3. Копируем файл во внутреннюю папку приложения
                 val savedPath = withContext(Dispatchers.IO) {
                     val destFile = File(context.filesDir, "${System.currentTimeMillis()}_$fileName")
                     resolver.openInputStream(uri)?.use { input ->
@@ -83,7 +103,6 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
                     destFile.absolutePath
                 }
 
-                // 4. Сохраняем инфо в базу
                 repository.insert(
                     FileEntity(
                         name = fileName,
@@ -94,7 +113,7 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             } catch (e: Exception) {
-                e.printStackTrace()
+                _uiState.value = UiState.Error("Не удалось загрузить файл: ${e.message}")
             }
         }
     }
@@ -105,7 +124,7 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 repository.update(file)
             } catch (e: Exception) {
-                e.printStackTrace()
+                _uiState.value = UiState.Error("Не удалось обновить файл: ${e.message}")
             }
         }
     }
@@ -121,7 +140,7 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 repository.delete(file)
             } catch (e: Exception) {
-                e.printStackTrace()
+                _uiState.value = UiState.Error("Не удалось удалить файл: ${e.message}")
             }
         }
     }

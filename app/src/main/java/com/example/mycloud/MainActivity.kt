@@ -11,17 +11,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.example.mycloud.data.local.FileEntity
 import com.example.mycloud.ui.FileViewModel
 import com.example.mycloud.ui.theme.MyCloudTheme
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.example.mycloud.ui.UiState
 
 class MainActivity : ComponentActivity() {
 
@@ -35,22 +42,55 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    FileScreen(viewModel)
+                    AppNavigation(viewModel)
                 }
             }
         }
     }
 }
 
+@Composable
+fun AppNavigation(viewModel: FileViewModel) {
+    val navController = rememberNavController()
+
+    NavHost(navController = navController, startDestination = "list") {
+        composable("list") {
+            FileScreen(
+                viewModel = viewModel,
+                onOpenDetail = { fileId -> navController.navigate("detail/$fileId") },
+                onOpenAbout = { navController.navigate("about") }
+            )
+        }
+        composable(
+            route = "detail/{fileId}",
+            arguments = listOf(navArgument("fileId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val fileId = backStackEntry.arguments?.getInt("fileId") ?: 0
+            val files by viewModel.files.collectAsStateWithLifecycle()
+            val file = files.find { it.id == fileId }
+            DetailScreen(
+                file = file,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("about") {
+            AboutScreen(onBack = { navController.popBackStack() })
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FileScreen(viewModel: FileViewModel) {
-    val files by viewModel.files.collectAsStateWithLifecycle()
+fun FileScreen(
+    viewModel: FileViewModel,
+    onOpenDetail: (Int) -> Unit,
+    onOpenAbout: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     var showDialog by remember { mutableStateOf(false) }
     var editingFile by remember { mutableStateOf<FileEntity?>(null) }
 
-    // Системный выбор файла (фото, видео, музыка, документы)
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -59,45 +99,78 @@ fun FileScreen(viewModel: FileViewModel) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("MyCloud — Хранилище файлов") })
+            TopAppBar(
+                title = { Text("MyCloud — Хранилище файлов") },
+                actions = {
+                    IconButton(onClick = onOpenAbout) {
+                        Icon(Icons.Default.Info, contentDescription = "О приложении")
+                    }
+                }
+            )
         },
         floatingActionButton = {
-            Column {
-                // Кнопка загрузки реального файла
-                FloatingActionButton(
-                    onClick = { launcher.launch("*/*") },
-                    modifier = Modifier.padding(bottom = 12.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Загрузить файл")
-                }
+            FloatingActionButton(
+                onClick = { launcher.launch("*/*") }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Загрузить файл")
             }
         }
     ) { padding ->
-        if (files.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Файлов пока нет.\nНажми + чтобы загрузить.")
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(8.dp)
-            ) {
-                items(files) { file ->
-                    FileItem(
-                        file = file,
-                        onEdit = {
-                            editingFile = file
-                            showDialog = true
-                        },
-                        onDelete = { viewModel.deleteFile(file) }
-                    )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            when (val state = uiState) {
+                is UiState.Loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+
+                is UiState.Error -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = state.message,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
+                is UiState.Success -> {
+                    val files = state.files
+                    if (files.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Файлов пока нет.\nНажми + чтобы загрузить.")
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp)
+                        ) {
+                            items(files) { file ->
+                                FileItem(
+                                    file = file,
+                                    onClick = { onOpenDetail(file.id) },
+                                    onEdit = {
+                                        editingFile = file
+                                        showDialog = true
+                                    },
+                                    onDelete = { viewModel.deleteFile(file) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -128,13 +201,15 @@ fun FileScreen(viewModel: FileViewModel) {
 @Composable
 fun FileItem(
     file: FileEntity,
+    onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 4.dp),
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier
