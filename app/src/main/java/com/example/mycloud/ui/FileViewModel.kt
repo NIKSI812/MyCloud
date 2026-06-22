@@ -42,8 +42,8 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
         )
 
     init {
-        // Следим за данными из базы и обновляем состояние экрана
         viewModelScope.launch {
+            kotlinx.coroutines.delay(800) // показываем индикатор загрузки
             repository.allFiles
                 .onEach { list ->
                     _uiState.value = UiState.Success(list)
