@@ -89,6 +89,7 @@ fun FileScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     var showDialog by remember { mutableStateOf(false) }
+    var fileToDelete by remember { mutableStateOf<FileEntity?>(null) }
     var editingFile by remember { mutableStateOf<FileEntity?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
@@ -166,7 +167,7 @@ fun FileScreen(
                                         editingFile = file
                                         showDialog = true
                                     },
-                                    onDelete = { viewModel.deleteFile(file) }
+                                    onDelete = { fileToDelete = file }
                                 )
                             }
                         }
@@ -193,6 +194,30 @@ fun FileScreen(
                     )
                 }
                 showDialog = false
+            }
+        )
+    }
+
+    // Диалог подтверждения удаления     ← ВСТАВЛЯЕШЬ ЗДЕСЬ
+    if (fileToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text("Удалить файл?") },
+            text = { Text("Файл \"${fileToDelete?.name}\" будет удалён безвозвратно.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        fileToDelete?.let { viewModel.deleteFile(it) }
+                        fileToDelete = null
+                    }
+                ) {
+                    Text("Удалить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) {
+                    Text("Отмена")
+                }
             }
         )
     }
