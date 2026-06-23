@@ -7,3 +7,5 @@ sealed interface UiState {
     data class Success(val files: List<FileEntity>) : UiState
     data class Error(val message: String) : UiState
 }
+
+//UiState

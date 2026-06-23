@@ -31,3 +31,5 @@ interface FileDao {
     @Delete
     suspend fun deleteFile(file: FileEntity)
 }
+
+//FileDao

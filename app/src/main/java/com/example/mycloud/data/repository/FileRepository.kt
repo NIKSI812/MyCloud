@@ -16,3 +16,5 @@ class FileRepository(private val fileDao: FileDao) {
 
     suspend fun delete(file: FileEntity) = fileDao.deleteFile(file)
 }
+
+//FileRepository

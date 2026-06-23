@@ -108,3 +108,5 @@ private fun InfoLine(label: String, value: String) {
         Text(value, fontWeight = FontWeight.Medium)
     }
 }
+
+//AboutScreen

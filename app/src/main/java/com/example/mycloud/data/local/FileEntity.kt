@@ -14,3 +14,5 @@ data class FileEntity(
     val uri: String = "",      // ссылка на реальный файл в телефоне
     val createdAt: Long = System.currentTimeMillis()  // дата создания
 )
+
+//FileEntily

@@ -94,3 +94,5 @@ fun DetailRow(label: String, value: String) {
         HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
     }
 }
+
+//DetailScreen
